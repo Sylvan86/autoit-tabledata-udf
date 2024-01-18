@@ -76,8 +76,9 @@ If you now use functions such as `_td_TableToMaps()`, you can process the indivi
 |  `_td_display`         | present a table object like _ArrayDisplay |
 |  `_td_toArray`         | creates an array from a table object |
 | <b>Preparation of 2D arrays</b> | <b>for easy further processing</b> |
-|  `_td_TableToMaps`     | converts a 2D-Array (rows=records, columns=values, column headers=keys) into a set of key-value maps (every record = key-value map)
-|  `_td_TableToDics`     | converts a 2D-Array (rows=records, columns=values, column headers=keys) into a set of objects (every record = Dictionary with named attributes) |
+|  `_td_toObjects`     | converts a 2D-Array (rows=records, columns=values, column headers=keys) into a set of key-value maps (every record = key-value map)
+|  `_td_toDics`     | converts a 2D-Array (rows=records, columns=values, column headers=keys) into a set of objects (every record = Dictionary with named attributes) |
+|  `_td_toPrimaryKeys`  | converts a table object into a map where the data can be accessed by their unique primary key |
 |  `_td_MapsToTable`    | converts a map-array (a 1D-array with maps as values) into 2 2D-array where the colums = keys |
 |  `_td_toColumns`       | convert 2D-array or table-data map from this udf into a map with column names as keys and their data as 1D-arrays |
 |  `_td_getColumn`      | extract one or multiple colums from a 2D-Array or a table-data map |
