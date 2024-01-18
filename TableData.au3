@@ -2,6 +2,13 @@
 #include <Array.au3>
 #include <String.au3>
 
+
+
+
+
+
+
+
 ; #INDEX# =======================================================================================================================
 ; Title .........: Table data
 ; AutoIt Version : 3.3.16.1
@@ -27,11 +34,12 @@
 ;  _td_toArray         - creates an array from a table object
 ;
 ;  ----- Preparation of 2D arrays for easy further processing ---
-;  _td_TableToMaps     - converts a 2D-Array (rows=records, columns=values, column headers=keys) into a set of key-value maps (every record = key-value map)
-;  _td_TableToDics     - converts a 2D-Array (rows=records, columns=values, column headers=keys) into a set of objects (every record = Dictionary with named attributes)
-;  _td_MapsToTable     - converts a map-array (a 1D-array with maps as values) into 2 2D-array where the colums = keys
-;  _td_toColumns       - convert 2D-array or table-data map from this udf into a map with column names as keys and their data as 1D-arrays
+;  _td_toObjects       - converts a table object into a set of key-value maps (every record = key-value map)
+;  _td_toDics          - converts a table object into a set of objects (every record = Dictionary with named attributes)
+;  _td_toPrimaryKeys   - converts a table object into a map where the data can be accessed by their unique primary key
+;  _td_toColumns       - converts a table object into a map with column names as keys and their data as 1D-arrays
 ;  _td_getColumn       - extract one or multiple colums from a 2D-Array or a table-data map
+;  _td_MapsToTable     - converts a map-array (a 1D-array with maps as values) into 2 2D-array where the colums = keys
 ; ===============================================================================================================================
 
 ; #INTERNAL_USE_ONLY# ===========================================================================================================
@@ -687,124 +695,6 @@ Func _td_toFixWidth(ByRef $mTable, $vWidths = Default, $bHeader = True, $sColSep
 	Return SetExtended(UBound($aData, 1), StringTrimRight($sRet, StringLen($sLineSep)))
 EndFunc
 
-
-; #FUNCTION# ======================================================================================
-; Name ..........: _td_TableToMaps()
-; Description ...: converts a table object into a set of key-value maps (every record = key-value map)
-; Syntax ........: _td_TableToMaps($mTable)
-; Parameters ....: $mTable        - table object structured like in this udf
-; Return values .: Success:       1D-array with record-objects of type Map
-;                  Failure: False
-;                     @error = 1: $mTable is not a valid table object
-; Author ........: AspirinJunkie
-; Last changed ..: 2023-12-21
-; =================================================================================================
-Func _td_TableToMaps($mTable)
-	If Not IsMap($mTable) Or Not MapExists($mTable, "Header") Or Not MapExists($mTable, "Data") Then Return SetError(1,0,0)
-
-	Local $aHeader = $mTable.Header
-	Local $aData = $mTable.Data
-
-	; prepare return Array
-	Local $aRet[UBound($aData)]
-
-	For $iI = 0 To UBound($aData) - 1
-		Local $mMap[]
-		For $iJ = 0 To UBound($aData, 2) - 1
-			$mMap[$aHeader[$iJ]] = $aData[$iI][$iJ]
-		Next
-		$aRet[$iI] = $mMap
-	Next
-
-	Return $aRet
-EndFunc   ;==>_td_TableToMaps
-
-
-; #FUNCTION# ======================================================================================
-; Name ..........: _td_TableToDics()
-; Description ...: converts a table object into a set of key-value dictionaries (every record = key-value map)
-; Syntax ........: _td_TableToDics($aArray, [$sHeader = Default, [$bHeader = False]])
-; Parameters ....: $mTable        - table object structured like in this udf
-; Return values .: Success:       1D-array with record-objects of type Scripting.Dictionary
-;                  Failure: False
-;                     @error = 1: $mTable is not a valid table object
-; Author ........: AspirinJunkie
-; Last changed ..: 2023-12-21
-; =================================================================================================
-Func _td_TableToDics($mTable)
-	If Not IsMap($mTable) Or Not MapExists($mTable, "Header") Or Not MapExists($mTable, "Data") Then Return SetError(1,0,0)
-
-	Local $aHeader = $mTable.Header
-	Local $aData = $mTable.Data
-
-	; prepare return Array
-	Local $aRet[UBound($aData)]
-
-	Local $oDic
-	For $iI = 0 To UBound($aData) - 1
-		$oDic = ObjCreate("Scripting.Dictionary")
-		For $iJ = 0 To UBound($aData, 2) - 1
-			$oDic($aHeader[$iJ]) = $aData[$iI][$iJ]
-		Next
-		$aRet[$iI] = $oDic
-	Next
-
-	Return $aRet
-EndFunc   ;==>_td_TableToDics
-
-
-
-; #FUNCTION# ======================================================================================
-; Name ..........: _td_MapsToTable()
-; Description ...: converts a map-array (a 1D-array with maps as values) into a table object
-; Syntax ........: _td_MapsToTable($aMapArray)
-; Parameters ....: $aMapArray     - the input map-array (1D-array with maps as values)
-; Return values .: Success:       2D-array
-;                  Failure: Null
-;                     @error = 1: aMapArray is not a array
-;                     @error = 2: array-value is not a map (@extend = index of wrong value)
-; Author ........: AspirinJunkie
-; Last changed ..: 2022-09-26
-; Version .......: 0.5
-; =================================================================================================
-Func _td_MapsToTable($aMapArray)
-	If UBound($aMapArray, 0) <> 1 Then Return SetError(1, UBound($aMapArray, 0) <> 1, Null)
-
-	Local $mHeaders[], $aResult[1][1]
-	Local $mMap, $sKey, $sAttribute
-
-	Local $iRow = 0, $nAttribs = 0
-	For $mMap In $aMapArray
-		If Not IsMap($mMap) Then Return SetError(2, $iRow, Null)
-
-		For $sKey In MapKeys($mMap)
-			If Not MapExists($mHeaders, $sKey) Then
-				$mHeaders[$sKey] = $nAttribs
-				$nAttribs += 1
-				If UBound($aResult, 2) < $nAttribs Then Redim $aResult[UBound($aResult, 1)][UBound($aResult, 2) * 2]
-			EndIf
-
-			If UBound($aResult, 1) <= $iRow Then Redim $aResult[UBound($aResult, 1) * 2][UBound($aResult, 2)]
-
-			$aResult[$iRow][$mHeaders[$sKey]] = $mMap[$sKey]
-		Next
-		$iRow += 1
-	Next
-
-	Redim $aResult[$iRow][$nAttribs]
-
-	Local $aHeader[UBound($mHeaders)]
-	For $sAttribute In MapKeys($mHeaders)
-		$aHeader[$mHeaders[$sAttribute]] = $sAttribute
-	Next
-
-	Local $mRet[]
-	$mRet["Data"] = $aResult
-	$mRet["Header"] = $aHeader
-
-	Return $mRet
-EndFunc   ;==>_td_MapsToTable
-
 ; #FUNCTION# ======================================================================================
 ; Name ..........: _td_toColumns()
 ; Description ...: convert 2D-array or table-data map from this udf into a map with column names as keys and their data as 1D-arrays
@@ -838,6 +728,164 @@ Func _td_toColumns($mTable)
 	Next
 
 	Return $mRet
+EndFunc
+
+
+; #FUNCTION# ======================================================================================
+; Name ..........: _td_toObjects()
+; Description ...: converts a table object into a set of key-value maps (every record = key-value map)
+; Syntax ........: _td_toObjects($mTable)
+; Parameters ....: $mTable        - table object structured like in this udf
+; Return values .: Success:       1D-array with record-objects of type Map
+;                  Failure: False
+;                     @error = 1: $mTable is not a valid table object
+; Author ........: AspirinJunkie
+; Last changed ..: 2023-12-21
+; =================================================================================================
+Func _td_toObjects($mTable)
+	If Not IsMap($mTable) Or Not MapExists($mTable, "Header") Or Not MapExists($mTable, "Data") Then Return SetError(1,0,0)
+
+	Local $aHeader = $mTable.Header
+	Local $aData = $mTable.Data
+
+	; prepare return Array
+	Local $aRet[UBound($aData)]
+
+	For $iI = 0 To UBound($aData) - 1
+		Local $mMap[]
+		For $iJ = 0 To UBound($aData, 2) - 1
+			$mMap[$aHeader[$iJ]] = $aData[$iI][$iJ]
+		Next
+		$aRet[$iI] = $mMap
+	Next
+
+	Return $aRet
+EndFunc   ;==>_td_toObjects
+
+; #FUNCTION# ======================================================================================
+; Name ..........: _td_toPrimaryKeys()
+; Description ...: converts a table object into a map in which the data is stored with its primary key
+; Syntax ........: _td_toPrimaryKeys(ByRef $mTable, $vPrimaryColumn = 0)
+; Parameters ....: $mTable         - table object structured like in this udf
+;                  $vPrimaryColumn - column identifier (integer index or column name as string)
+;                                    which holds the unique primary key of the data
+; Return values .: Success: a AutoIt-Map where Keys=Primary Keys and value=map of data
+;                  Failure: Null
+;                     @error = 1: wrong format of $mTable
+;                     @error = 2: not enough header elements
+;                     @error = 3: wrong datype of $vPrimaryColumn (only string or int)
+;                     @error = 4: column name in $vPrimaryColumn is not contained in the header
+;                     @error = 5: wrong column index in $vPrimaryColumn
+;                     @error = 6: values in the column $vPrimaryColumn are not unique
+; Author ........: AspirinJunkie
+; Last changed ..: 2024-01-18
+; =================================================================================================
+Func _td_toPrimaryKeys(ByRef $mTable, $vPrimaryColumn = 0)
+	If Not IsMap($mTable) Or Not MapExists($mTable, "Header") Or Not MapExists($mTable, "Data") Then Return SetError(1,0,Null)
+
+	Local $aHeader = $mTable.Header
+	Local $aData = $mTable.Data
+
+	If UBound($aHeader) < UBound($aData, 2) Then Return SetError(2, UBound($aHeader), Null)
+
+	; check for validity of $vPrimaryColumn
+	If IsString($vPrimaryColumn) Then
+		$vPrimaryColumn = _ArraySearch($aHeader, $vPrimaryColumn)
+		If $vPrimaryColumn < 0 Then Return SetError(4, @error, Null)
+	ElseIf IsInt($vPrimaryColumn) Then
+		If $vPrimaryColumn < 0 Or $vPrimaryColumn >= UBound($aData, 2) Then Return SetError(5, UBound($aData, 2), Null)
+	Else
+		Return SetError(3, 0, Null)
+	EndIf
+
+	; transfer the data into the primary-key focused map-structure
+	Local $mRet[]
+	For $i = 0 To UBound($aData, 1) - 1
+
+		; check if key is really unique
+		If MapExists($mRet, $aData[$i][$vPrimaryColumn]) Then Return SetError(6, 0, Null)
+
+		Local $mEntry[]
+		For $j = 0 To UBound($aData, 2) - 1
+			$mEntry[$aHeader[$j]] = $aData[$i][$j]
+		Next
+
+		$mRet[$aData[$i][$vPrimaryColumn]] = $mEntry
+	Next
+
+	Return $mRet
+EndFunc
+
+
+; #FUNCTION# ======================================================================================
+; Name ..........: _td_toDics()
+; Description ...: converts a table object into a set of key-value dictionaries (every record = key-value map)
+; Syntax ........: _td_toDics($aArray, [$sHeader = Default, [$bHeader = False]])
+; Parameters ....: $mTable        - table object structured like in this udf
+; Return values .: Success:       1D-array with record-objects of type Scripting.Dictionary
+;                  Failure: False
+;                     @error = 1: $mTable is not a valid table object
+; Author ........: AspirinJunkie
+; Last changed ..: 2023-12-21
+; =================================================================================================
+Func _td_toDics($mTable)
+	If Not IsMap($mTable) Or Not MapExists($mTable, "Header") Or Not MapExists($mTable, "Data") Then Return SetError(1,0,0)
+
+	Local $aHeader = $mTable.Header
+	Local $aData = $mTable.Data
+
+	; prepare return Array
+	Local $aRet[UBound($aData)]
+
+	Local $oDic
+	For $iI = 0 To UBound($aData) - 1
+		$oDic = ObjCreate("Scripting.Dictionary")
+		For $iJ = 0 To UBound($aData, 2) - 1
+			$oDic($aHeader[$iJ]) = $aData[$iI][$iJ]
+		Next
+		$aRet[$iI] = $oDic
+	Next
+
+	Return $aRet
+EndFunc   ;==>_td_toDics
+
+; #FUNCTION# ======================================================================================
+; Name ..........: _td_toArray()
+; Description ...: converts a table object into 2D where header = first row
+;                  if you only need the data array without header use $mTable.Data instead
+; Syntax ........: _td_toArray(ByRef $mTable)
+; Parameters ....: $mTable         - table object structured like in this udf
+; Return values .: Success: a 2D Array with header as first row and data in the following rows
+;                  Failure: Null
+;                     @error = 1: wrong format of $mTable
+;                     @error = 2: not enough header elements
+; Author ........: AspirinJunkie
+; Last changed ..: 2024-01-18
+; =================================================================================================
+Func _td_toArray(ByRef $mTable)
+	If Not IsMap($mTable) Or Not MapExists($mTable, "Header") Or Not MapExists($mTable, "Data") Then Return SetError(1,0,Null)
+
+	Local $aHeader = $mTable.Header
+	Local $aData = $mTable.Data
+
+	If UBound($aHeader) < UBound($aData, 2) Then Return SetError(2, UBound($aHeader), Null)
+
+	; declare the return array
+	Local $aRet[UBound($aData, 1) + 1][UBound($aData, 2)]
+
+	; add header row
+	For $i = 0 To UBound($aData, 2) - 1
+		$aRet[0][$i] = $aHeader[$i]
+	Next
+
+	; add data
+	For $i = 0 To UBound($aData, 1) - 1
+		For $j = 0 To UBound($aData, 2) - 1
+			$aRet[$i+1][$j] = $aData[$i][$j]
+		Next
+	Next
+
+	Return $aRet
 EndFunc
 
 ; #FUNCTION# ======================================================================================
@@ -920,6 +968,58 @@ Func _td_getColumn($mTable, $vColumn, $vHeader = Default)
 	EndIf
 
 EndFunc
+
+; #FUNCTION# ======================================================================================
+; Name ..........: _td_MapsToTable()
+; Description ...: converts a map-array (a 1D-array with maps as values) into a table object
+; Syntax ........: _td_MapsToTable($aMapArray)
+; Parameters ....: $aMapArray     - the input map-array (1D-array with maps as values)
+; Return values .: Success:       2D-array
+;                  Failure: Null
+;                     @error = 1: aMapArray is not a array
+;                     @error = 2: array-value is not a map (@extend = index of wrong value)
+; Author ........: AspirinJunkie
+; Last changed ..: 2022-09-26
+; Version .......: 0.5
+; =================================================================================================
+Func _td_MapsToTable($aMapArray)
+	If UBound($aMapArray, 0) <> 1 Then Return SetError(1, UBound($aMapArray, 0) <> 1, Null)
+
+	Local $mHeaders[], $aResult[1][1]
+	Local $mMap, $sKey, $sAttribute
+
+	Local $iRow = 0, $nAttribs = 0
+	For $mMap In $aMapArray
+		If Not IsMap($mMap) Then Return SetError(2, $iRow, Null)
+
+		For $sKey In MapKeys($mMap)
+			If Not MapExists($mHeaders, $sKey) Then
+				$mHeaders[$sKey] = $nAttribs
+				$nAttribs += 1
+				If UBound($aResult, 2) < $nAttribs Then Redim $aResult[UBound($aResult, 1)][UBound($aResult, 2) * 2]
+			EndIf
+
+			If UBound($aResult, 1) <= $iRow Then Redim $aResult[UBound($aResult, 1) * 2][UBound($aResult, 2)]
+
+			$aResult[$iRow][$mHeaders[$sKey]] = $mMap[$sKey]
+		Next
+		$iRow += 1
+	Next
+
+	Redim $aResult[$iRow][$nAttribs]
+
+	Local $aHeader[UBound($mHeaders)]
+	For $sAttribute In MapKeys($mHeaders)
+		$aHeader[$mHeaders[$sAttribute]] = $sAttribute
+	Next
+
+	Local $mRet[]
+	$mRet["Data"] = $aResult
+	$mRet["Header"] = $aHeader
+
+	Return $mRet
+EndFunc   ;==>_td_MapsToTable
+
 
 
 

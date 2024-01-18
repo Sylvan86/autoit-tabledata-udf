@@ -10,7 +10,7 @@ Global $sTaskListRaw = _getCmdOutput('tasklist /FO CSV',  True)
 Global $mData =  _td_fromCsv($sTaskListRaw, ',', "1-3", "name|pid|session|nr|mem")
 
 ; handle the datasets like objects:
-Global $aProcesses = _td_TableToMaps($mData)
+Global $aProcesses = _td_toObjects($mData)
 For $mP in $aProcesses
 	ConsoleWrite( $mP.name &  " [" & $mP.pid & "]: " & $mP.mem & @CRLF)
 Next
