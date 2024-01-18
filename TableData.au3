@@ -61,7 +61,6 @@
 ;                                     Boolean True: first row = header row
 ;                                     1D-Array: column identifiers as an array (number of elements must correspond to the number of columns in $aArray)
 ;                                     String: column identifiers as string separated with $sDelim (number of elements must correspond to the number of columns in $aArray)
-;                  $nSkipRows       - number of lines at the beginning of the file that should be skipped
 ;                  $sValParseDef    - column definitions either as semicolon-separated string or as 1D array
 ;                                     if string and no semicolon is used, then the string definition is used for all elements
 ;                                     the individual elements can have the following types:
@@ -921,20 +920,6 @@ Func _td_getColumn($mTable, $vColumn, $vHeader = Default)
 	EndIf
 
 EndFunc
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
