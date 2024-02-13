@@ -28,6 +28,7 @@
 ;  _td_toArray         - creates an array from a table object
 ;
 ;  ----- Preparation of 2D arrays for easy further processing ---
+;  _td_join            - sql-like joins for table objects
 ;  _td_toObjects       - converts a table object into a set of key-value maps (every record = key-value map)
 ;  _td_toDics          - converts a table object into a set of objects (every record = Dictionary with named attributes)
 ;  _td_toPrimaryKeys   - converts a table object into a map where the data can be accessed by their unique primary key
@@ -888,6 +889,377 @@ Func _td_toArray(ByRef $mTable)
 EndFunc
 
 ; #FUNCTION# ======================================================================================
+; Name ..........: _td_join()
+; Description ...: Combines 2 table objects via corresponding properties (actual data or user-defined calculated) similar to JOIN in relational databases
+; Syntax ........: _td_join($aA, $aB, [$vCompA = 0, [$vCompB = Default, [$sJoinType = "inner"]]])
+; Parameters ....: $aA        - table object structured like in this udf which should joined with $aB
+;                  $aB        - table object structured like in this udf which should joined with $aA
+;                  $vCompA    - Rule for determining the link key for $aA.
+;                               defaults to 0 = value of first column element
+;                               Can be:
+;                               | single Integer: Column-Index for direct values
+;                               | Integer-Array: combined multiple direct values
+;                               | user-defined function: calculation rule as a function of the form
+;                                 function($a1DArray, $dummy): get the current array row as 1D-Array and calculate the key
+;                               | String:
+;                                    - If contains "$A": AutoIt-Code as string to calculate the key where "$A" represents the current array line as a 1D array.
+;                                    - If contains "|": multiple column names separated by "|" (like a "combined key" in SQL)
+;                                    - Else: single column name
+;                  $vCompB    - the same like $vCompA but for table $aB
+;                               defaults to the same value as $aA
+;                  $sJoinType - type of joining (see https://www.w3schools.com/sql/sql_join.asp for explanation)
+;                               on of these:
+;                               | "inner" (default): inner join - Returns records that have matching values in both tables
+;                               | "left" : left (outer) join - Returns all records from the left table, and the matched records from the right table
+;                               | "right": right (outer) join - Returns all records from the right table, and the matched records from the left table
+;                               | "outer" or "full": (full) outer join - Returns all records when there is a match in either left or right table
+; Return values .: Success: combined values as table object with columns of $aA first and $aB following. @extended = number of rows
+;                  Failure: null and set error to:
+;                           | @error = 1 : $aA.Data is not a 2D array
+;                           | @error = 2 : $aB.Data is not a 2D array
+;                           | @error = 3 : No data in $aA.Data
+;                           | @error = 4 : No data in $aB.Data
+;                           | @error = 5 : $aA is not a valid table object
+;                           | @error = 6 : $aB is not a valid table object
+;                           | @error = 7 : no valid form for $vCompA
+;                           | @error = 8 : no valid form for $vCompB
+;                           | @error = 9 : given attribute name for $vCompA is not in header
+;                           | @error = 10: given attribute name for $vCompB is not in header
+;                           | @error = 11: An array was passed for $vCompA but not a 1D array - invalid
+;                           | @error = 12: An array was passed for $vCompB but not a 1D array - invalid
+;                           | @error = 13: no valid value for $sJoinType passed
+;                           | @error = 14: No joins found - return array is therefore empty
+; Author ........: aspirinjunkie
+; Modified ......: 2024-02-13
+; Related .......: __td_cb_getKey_Index_Single(), _Array__td_cb_getKey_String(), __td_cb_getKey_Index_Multi(), __td_A2dToAinA()
+; Example .......: Yes
+;                  $mNetStat = _td_fromFixWidth(_getCmdOutput('netstat -ano'), "7;23;23;16;Number 100", "1-2", true)
+;                  $mTaskList =  _td_fromCsv(_getCmdOutput('tasklist /FO CSV',  True), ',', "2", True)
+;                  $mJoined = _td_join($mNetStat, $mTaskList, "PID", "PID", "left")
+;                  _td_display($mJoined, "Joined tables: open ports and their corresponding process info")
+;
+;                  Func _getCmdOutput($sCmd, $bComspec = False, $oFlags = $STDOUT_CHILD)
+;                     Local $iPID = Run(($bComspec ? '"' & @ComSpec & '" /c ' : "") & $sCmd, "", @SW_Hide, $oFlags)
+;                     ProcessWaitClose($iPID)
+;                     Return _WinAPI_OemToChar(StdoutRead($iPID))
+;                  EndFunc
+; =================================================================================================
+Func _td_join($aA, $aB, $vCompA = 0, $vCompB = Default, $sJoinType = "inner")
+	Local $bCbIsString = False
+
+	If Not IsMap($aA) Or Not MapExists($aA, "Header") Or Not MapExists($aA, "Data") Then Return SetError(5,0,0)
+	If Not IsMap($aB) Or Not MapExists($aB, "Header") Or Not MapExists($aB, "Data") Then Return SetError(6,0,0)
+
+	Local $aHeaderA = $aA.Header
+	Local $aHeaderB = $aB.Header
+	$aA = $aA.Data
+	$aB = $aB.Data
+
+	; same key descriptor for both arrays (if $vCompB = Default)
+	If IsKeyword($vCompB) = 1 Then $vCompB = $vCompA
+
+	; variables which describe the both Arrays
+	Local $nDimsA = UBound($aA, 0), $nDimsB = UBound($aB, 0), _
+			$nRowsA = UBound($aA, 1), $nRowsB = UBound($aB, 1), _
+			$nColsA = UBound($aA, 2), $nColsB = UBound($aB, 2)
+
+	If $nRowsA < 1 Then Return SetError(3, $nRowsA, Null)
+	If $nRowsB < 1 Then Return SetError(4, $nRowsB, Null)
+
+	; prepare Array A (convert into Array-In-Array)
+	If $nDimsA = 2 Then ; 2D-Array in Array-In-Array
+		; already dimension the number of sub-elements for the result array
+		ReDim $aA[$nRowsA][$nColsA + $nColsB]
+
+		; convert into Array-In-Array for better handling in the next steps
+		$aA = __td_A2dToAinA($aA)
+
+	Else
+		Return SetError(1, $nDimsA, Null)
+	EndIf
+
+	; prepare Array B (convert into Array-In-Array)
+	If $nDimsB = 2 Then ; 2D-Array in Array-In-Array
+		; convert into Array-In-Array for better handling in the next steps
+		$aB = __td_A2dToAinA($aB)
+	Else
+		Return SetError(2, $nDimsB, Null)
+	EndIf
+
+	; prepare the key extraction function for $aA
+	Local $cbKeyA
+	Select
+		Case IsInt($vCompA) ; single array index as key
+			$cbKeyA = __td_cb_getKey_Index_Single
+
+		Case IsFunc($vCompA) ; user defined function
+			$cbKeyA = $vCompA
+
+		Case IsString($vCompA)
+			If StringInStr($vCompA, '$A', 2) Then ; user defined function as a string
+				Local $bBefore = Opt("ExpandEnvStrings", 1)
+				$cbKeyA = __td_cb_getKey_String
+				$bCbIsString = True
+
+			ElseIf StringInStr($vCompA, '|', 2) Then ; multiple attributes
+				Local $bIsThere
+
+				; check every attribute name if exists in table
+				$vCompA = StringSplit($vCompA, "|", 3)
+				For $i = 0 To Ubound($vCompA) - 1
+					$bIsThere = False
+					For $j = 0 To UBound($aHeaderA) - 1
+						If $aHeaderA[$j] = $vCompA[$i] Then
+							$vCompA[$i] = $j
+							$bIsThere = True
+							ExitLoop
+						EndIf
+					Next
+					If Not $bIsThere Then Return SetError(9, 0, Null)
+				Next
+				$cbKeyA = __td_cb_getKey_Index_Multi
+				; now $vCompA is an array with column indices
+
+			Else ; check for single attribute
+				Local $bIsThere = False ; only temp
+				For $i = 0 To UBound($aHeaderA) - 1
+					If $aHeaderA[$i] = $vCompA Then
+						$cbKeyA = __td_cb_getKey_Index_Single
+						$vCompA = $i
+						$bIsThere = True
+						ExitLoop
+					EndIf
+				Next
+				If Not $bIsThere Then Return SetError(9, 0, Null)
+				; now $vCompA holds the column index
+
+			EndIf
+
+		Case IsArray($vCompA) ; multiple indices
+			If UBound($vCompA, 0) <> 1 Then Return SetError(11, UBound($vCompA, 0), Null)
+			$cbKeyA = __td_cb_getKey_Index_Multi
+
+		Case Else ; no valid form for $vCompA
+			Return SetError(7, 0, Null)
+
+	EndSelect
+
+	; prepare the key extraction function for $aB
+	Local $cbKeyB
+	Select
+		Case IsInt($vCompB) ; single array index as key
+			$cbKeyB = __td_cb_getKey_Index_Single
+
+		Case IsFunc($vCompB) ; user defined function
+			$cbKeyB = $vCompB
+
+		Case IsString($vCompB) ; function directly as a string
+			If StringInStr($vCompB, '$A', 2) Then ; user defined function as a string
+				Local $bBefore = Opt("ExpandEnvStrings", 1)
+				$cbKeyB = __td_cb_getKey_String
+				$bCbIsString = True
+
+			ElseIf StringInStr($vCompB, '|', 2) Then ; multiple attributes
+				Local $bIsThere
+
+				; check every attribute name if exists in table
+				$vCompB = StringSplit($vCompB, "|", 3)
+				For $i = 0 To Ubound($vCompB) - 1
+					$bIsThere = False
+					For $j = 0 To UBound($aHeaderB) - 1
+						If $aHeaderB[$j] = $vCompB[$i] Then
+							$vCompB[$i] = $j
+							$bIsThere = True
+							ExitLoop
+						EndIf
+					Next
+					If Not $bIsThere Then Return SetError(10, 0, Null)
+				Next
+				$cbKeyB = __td_cb_getKey_Index_Multi
+				; now $vCompB is an array with column indices
+
+			Else ; check for single attribute
+				Local $bIsThere = False ; only temp
+				For $i = 0 To UBound($aHeaderB) - 1
+					If $aHeaderB[$i] = $vCompB Then
+						$cbKeyB = __td_cb_getKey_Index_Single
+						$vCompB = $i
+						$bIsThere = True
+						ExitLoop
+					EndIf
+				Next
+				If Not $bIsThere Then Return SetError(10, 0, Null)
+				; now $vCompB holds the column index
+
+			EndIf
+
+		Case IsArray($vCompB) ; multiple indices
+			If UBound($vCompB, 0) <> 1 Then Return SetError(12, UBound($vCompB, 0), Null)
+			$cbKeyB = __td_cb_getKey_Index_Multi
+
+		Case Else ; no valid form for $vCompB
+			Return SetError(8, 0, Null)
+
+	EndSelect
+
+	; convert $aA into Map
+	Local $mA[], $aData, $sKey
+	For $i = 0 To $nRowsA - 1
+		$aData = $aA[$i]
+		$sKey = $cbKeyA($aData, $vCompA)
+
+		Local $aSubElements[1]
+		If MapExists($mA, $sKey) Then ; record with same key already exists
+			$aSubElements = $mA[$sKey]
+			ReDim $aSubElements[UBound($aSubElements) + 1]
+		EndIf
+
+		$aSubElements[UBound($aSubElements) - 1] = $aData
+		$mA[$sKey] = $aSubElements
+
+	Next
+
+	; convert $aB into Map
+	Local $mB[]
+	For $i = 0 To $nRowsB - 1
+		$aData = $aB[$i]
+		$sKey = $cbKeyB($aData, $vCompB)
+
+		Local $aSubElements[1]
+		If MapExists($mB, $sKey) Then ; record with same key already exists
+			$aSubElements = $mB[$sKey]
+			ReDim $aSubElements[UBound($aSubElements) + 1]
+		EndIf
+
+		$aSubElements[UBound($aSubElements) - 1] = $aData
+		$mB[$sKey] = $aSubElements
+
+	Next
+
+	; join both arrays
+	Local $mRet[], $aDataTmpA, $aDataTmpB
+	Switch $sJoinType
+		Case "inner", "left", "outer", "full"
+			For $sKey In MapKeys($mA)
+				If $sJoinType = "inner" And Not MapExists($mB, $sKey) Then ContinueLoop
+
+				$aSubA = $mA[$sKey]
+				$aSubB = $mB[$sKey]
+
+				For $i = 0 To UBound($aSubA) - 1
+					$aDataTmpA = $aSubA[$i]
+
+					If IsArray($aSubB) Then ; corresponding right data
+						For $j = 0 To UBound($aSubB) - 1
+							$aDataTmpB = $aSubB[$j]
+
+							For $k = 0 To UBound($aDataTmpB) - 1
+								$aDataTmpA[$k + $nColsA] = $aDataTmpB[$k]
+							Next
+							MapAppend($mRet, $aDataTmpA)
+						Next
+
+					Else ; left join without corresponding right data
+						MapAppend($mRet, $aDataTmpA)
+					EndIf
+				Next
+			Next
+
+			; for outer join first do the left join, then add the rest
+			If $sJoinType = "outer" Or $sJoinType = "full" Then ContinueCase
+
+		Case "outer", "full"
+			; after left join add the rest
+			For $sKey In MapKeys($mB)
+				If MapExists($mA, $sKey) Then ContinueLoop
+
+				$aSubB = $mB[$sKey]
+
+				For $i = 0 To UBound($aSubB) - 1
+					Local $aData[$nColsA + $nColsB]
+					$aDataTmpB = $aSubB[$i]
+
+					For $k = 0 To UBound($aDataTmpB) - 1
+						$aData[$k + $nColsA] = $aDataTmpB[$k]
+					Next
+
+					MapAppend($mRet, $aData)
+				Next
+			Next
+
+		Case "right"
+			For $sKey In MapKeys($mB)
+
+				$aSubA = $mA[$sKey]
+				$aSubB = $mB[$sKey]
+
+				For $i = 0 To UBound($aSubB) - 1
+					Local $aData[$nColsA + $nColsB]
+
+					$aDataTmpB = $aSubB[$i]
+
+					For $k = 0 To UBound($aDataTmpB) - 1
+						$aData[$k + $nColsA] = $aDataTmpB[$k]
+					Next
+
+					If IsArray($aSubA) Then ; corresponding left data
+						For $j = 0 To UBound($aSubA) - 1
+							$aDataTmpA = $aSubA[$j]
+
+							For $k = 0 To $nColsA - 1
+								$aData[$k] = $aDataTmpA[$k]
+							Next
+							MapAppend($mRet, $aData)
+						Next
+
+					Else ; right join without corresponding left data
+						MapAppend($mRet, $aData)
+					EndIf
+				Next
+			Next
+
+		Case Else
+			Return SetError(13, 0, Null)
+	EndSwitch
+
+	If $bCbIsString Then Opt("ExpandEnvStrings", $bBefore)
+
+	; build the return Array
+	Local $nRowsRet = UBound($mRet), $nColsRet = $nColsA + $nColsB
+	Local $aRet[UBound($mRet)][$nColsRet], $iArr = 0
+	If $mRet < 1 Then Return SetError(14, $nRowsRet, $aRet)
+
+	For $sKey In MapKeys($mRet)
+		$aDataTmp = $mRet[$sKey]
+
+		For $i = 0 To $nColsRet - 1
+			$aRet[$iArr][$i] = $aDataTmp[$i]
+		Next
+
+		$iArr += 1
+	Next
+
+	; build the return header
+	; check for double header values and fix them if necessary
+	Local $mHeaderA[]
+	For $sVal In $aHeaderA
+		$mHeaderA[$sVal] = ""
+	Next
+	For $i = 0 To UBound($aHeaderB) - 1
+		If MapExists($mHeaderA, $aHeaderB[$i]) Then $aHeaderB[$i] &= ".1"
+	Next
+	_ArrayAdd($aHeaderA, $aHeaderB)
+
+	Local $mRet[]
+	$mRet.Data   = $aRet
+	$mRet.Header = $aHeaderA
+	$mRet.nCols  = $nColsRet
+	$mRet.nRows  = UBound($aRet)
+
+	Return SetExtended(UBound($aRet), $mRet)
+EndFunc   ;==>_td_join
+
+; #FUNCTION# ======================================================================================
 ; Name ..........: _td_getColumn()
 ; Description ...: extract one or multiple colums from a 2D-Array or a table-data map (defined in this udf)
 ; Syntax ........: _td_getColumn($vData, $vColumn, $vHeader = Default)
@@ -1232,6 +1604,54 @@ Func __td_delRowsInString($sString, $sRows, $bDelTrailingLineBreaks = True)
 
 	Return $sRight = "" ? StringTrimRight($sRet, StringLen($cLB)) : $sRet & $sRight
 EndFunc
+
+; #INTERNAL_USE_ONLY# =============================================================================
+; Name ..........: __td_A2dToAinA()
+; Description ...: Convert a 2D array into a Arrays in Array
+; Syntax ........: __td_A2dToAinA(ByRef $A)
+; Parameters ....: $A             - the 2D-Array  which should be converted
+; Return values .: Success: a Arrays in Array build from the input array
+;                  Failure: False
+;                     @error = 1: $A is'nt an 2D array
+; Author ........: AspirinJunkie
+; =================================================================================================
+Func __td_A2dToAinA(ByRef $A)
+	If UBound($A, 0) <> 2 Then Return SetError(1, UBound($A, 0), False)
+	Local $N = UBound($A), $u = UBound($A, 2)
+	Local $a_Ret[$N]
+
+	For $i = 0 To $N - 1
+		Local $t[$u]
+		For $j = 0 To $u - 1
+			$t[$j] = $A[$i][$j]
+		Next
+		$a_Ret[$i] = $t
+	Next
+	Return SetExtended($N, $a_Ret)
+EndFunc
+
+; #INTERNAL_USE_ONLY# =============================================================================
+; helper function for _td_join() which generates a primary key from a single array index
+Func __td_cb_getKey_Index_Single(ByRef Const $aA, Const $iInd)
+	Return $aA[$iInd]
+EndFunc   ;==>__td_cb_getKey_Index_Single
+
+; #INTERNAL_USE_ONLY# =============================================================================
+; helper function for _td_join() which generates a primary key from several array indices
+Func __td_cb_getKey_Index_Multi(ByRef Const $aA, Const $aInd)
+	Local $sKey = ""
+	For $i = 0 To UBound($aInd) - 1
+		$sKey &= $aA[$aInd[$i]] & "|"
+	Next
+	Return StringTrimRight($sKey, 1)
+EndFunc   ;==>__td_cb_getKey_Index_Multi
+
+; #INTERNAL_USE_ONLY# =============================================================================
+; helper function for _td_join() and _ArrayAddGeneratedColumn which determines a primary key from a calculation rule as AutoIt code in the string $sCBString
+Func __td_cb_getKey_String(ByRef Const $A, Const $sCBSTRING)
+	Local $vRet = Execute($sCBSTRING)
+	Return SetError(@error, @extended, $vRet)
+EndFunc   ;==>__td_cb_getKey_String
 
 ; helper function for automatic parsing
 Func __td_parseAutomatic($sValue)
