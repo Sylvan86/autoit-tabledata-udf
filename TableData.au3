@@ -1,13 +1,7 @@
 #include-once
 #include <Array.au3>
 #include <String.au3>
-
-
-
-
-
-
-
+#include <Debug.au3>
 
 ; #INDEX# =======================================================================================================================
 ; Title .........: Table data
@@ -518,6 +512,7 @@ EndFunc
 ; Syntax ........: _td_display(ByRef $mTable, $sTitle = "Table" , $sSep = Opt("GUIDataSeparatorChar"))
 ; Parameters ....: $mTable         - table object structured like in this udf
 ;                  $sTitle         - title text for the window
+;                  $bButtons       - If true: buttons for copy selected data are added
 ;                  $sSep           - separator char/string used to delimit the header elements
 ; Return values .: Success: 1
 ;                  Failure: 0
@@ -526,12 +521,16 @@ EndFunc
 ; Author ........: AspirinJunkie
 ; Last changed ..: 2023-12-18
 ; =================================================================================================
-Func _td_display(ByRef $mTable, $sTitle = "Table" , $sSep = Opt("GUIDataSeparatorChar"))
+Func _td_display(ByRef $mTable, $sTitle = "Table", $bButtons = False, $sSep = Opt("GUIDataSeparatorChar"))
 	If Not IsMap($mTable) Or Not MapExists($mTable, "Header") Or Not MapExists($mTable, "Data") Then Return SetError(1,0,0)
 
 	Local $aHeader = $mTable.Header
 	Local $sHeader = $aHeader = Null ? "" : _ArrayToString($aHeader, $sSep)
-	_ArrayDisplay($mTable.Data, $sTitle, "", 16 + 64, $sSep, $sHeader)
+	If $bButtons Then
+		_DebugArrayDisplay($mTable.Data, $sTitle, "", 16 + 64, $sSep, $sHeader)
+	Else
+		_ArrayDisplay($mTable.Data, $sTitle, "", 16 + 64, $sSep, $sHeader)
+	EndIf
 	If @error Then Return SetError(2, @error, 0)
 
 	Return 1

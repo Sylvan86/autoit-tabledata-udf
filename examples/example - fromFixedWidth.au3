@@ -70,8 +70,8 @@ _td_display($mData, "example 4 - netstat with column processing")
 
 #Region helper functions
 ; run cmdline-commands and return their output
-Func _getCmdOutput($sCmd, $bComspec = False)
-    Local $iPID = Run(($bComspec ? '"' & @ComSpec & '" /c ' : "") & $sCmd, "", @SW_Hide, $STDIN_CHILD + $STDOUT_CHILD)
+Func _getCmdOutput($sCmd, $bComspec = False, $oFlags = $STDOUT_CHILD)
+    Local $iPID = Run(($bComspec ? '"' & @ComSpec & '" /c ' : "") & $sCmd, "", @SW_Hide, $oFlags)
 	ProcessWaitClose($iPID)
 	Return _WinAPI_OemToChar(StdoutRead($iPID))
 EndFunc

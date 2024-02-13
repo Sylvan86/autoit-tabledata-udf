@@ -60,7 +60,7 @@ _td_display($mData)
 and we get the result:
 ![screenshot](result.PNG)
 
-If you now use functions such as `_td_TableToMaps()`, you can process the individual data with expressions such as `$aData.Proto` or `$aData.State`. This should be much clearer than having to deal with array indices.
+If you now use functions such as `_td_toObjects()`, you can process the individual data with expressions such as `$aData.Proto` or `$aData.State`. This should be much clearer than having to deal with array indices.
 
 ## Functions
 | function | description |

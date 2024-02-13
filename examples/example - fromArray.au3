@@ -12,7 +12,7 @@ Global $aArray[5][4] = [["name", "age", "salary", "married"], ["Max", 25, 5000.5
 $mData = _td_fromArray($aArray, True)
 
 ; display data:
-_td_display($mData, "example 1")
+_td_display($mData, "example 1", True)
 #EndRegion
 
 
