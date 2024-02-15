@@ -913,6 +913,12 @@ EndFunc
 ;                               | "left" : left (outer) join - Returns all records from the left table, and the matched records from the right table
 ;                               | "right": right (outer) join - Returns all records from the right table, and the matched records from the left table
 ;                               | "outer" or "full": (full) outer join - Returns all records when there is a match in either left or right table
+;                  $bCallBackParamArrayA: Choose the form of the data for the key-retrieving callback function in $vCompA
+;                               | If True: The current data row is given to the callback function in $vCompA as a 1D array
+;                               | If False: The current data row is given to the callback function in $vCompA as map with column names as key
+;                  $bCallBackParamArrayB: Choose the form of the data for the key-retrieving callback function in $vCompB
+;                               | If True: The current data row is given to the callback function in $vCompB as a 1D array
+;                               | If False: The current data row is given to the callback function in $vCompB as map with column names as key
 ; Return values .: Success: combined values as table object with columns of $aA first and $aB following. @extended = number of rows
 ;                  Failure: null and set error to:
 ;                           | @error = 1 : $aA.Data is not a 2D array
@@ -930,7 +936,7 @@ EndFunc
 ;                           | @error = 13: no valid value for $sJoinType passed
 ;                           | @error = 14: No joins found - return array is therefore empty
 ; Author ........: aspirinjunkie
-; Modified ......: 2024-02-13
+; Modified ......: 2024-02-15
 ; Related .......: __td_cb_getKey_Index_Single(), _Array__td_cb_getKey_String(), __td_cb_getKey_Index_Multi(), __td_A2dToAinA()
 ; Example .......: Yes
 ;                  $mNetStat = _td_fromFixWidth(_getCmdOutput('netstat -ano'), "7;23;23;16;Number 100", "1-2", true)
@@ -944,7 +950,7 @@ EndFunc
 ;                     Return _WinAPI_OemToChar(StdoutRead($iPID))
 ;                  EndFunc
 ; =================================================================================================
-Func _td_join($aA, $aB, $vCompA = 0, $vCompB = Default, $sJoinType = "inner")
+Func _td_join($aA, $aB, $vCompA = 0, $vCompB = Default, $sJoinType = "inner", $bCallBackParamArrayA = True, $bCallBackParamArrayB = True)
 	Local $bCbIsString = False
 
 	If Not IsMap($aA) Or Not MapExists($aA, "Header") Or Not MapExists($aA, "Data") Then Return SetError(5,0,0)
@@ -971,8 +977,22 @@ Func _td_join($aA, $aB, $vCompA = 0, $vCompB = Default, $sJoinType = "inner")
 		; already dimension the number of sub-elements for the result array
 		ReDim $aA[$nRowsA][$nColsA + $nColsB]
 
-		; convert into Array-In-Array for better handling in the next steps
-		$aA = __td_A2dToAinA($aA)
+		If $bCallBackParamArrayA Then
+			; convert into Array-In-Array for better handling in the next steps
+			$aA = __td_A2dToAinA($aA)
+		Else
+			; convert into Map for better handling in the next steps
+			Local $aTmp[$nRowsA]
+			For $i = 0 To $nRowsA - 1
+				Local $mTemp[]
+				For $j = 0 To $nColsA - 1
+					$mTemp[$aHeaderA[$j]] = $aA[$i][$j]
+				Next
+				$aTmp[$i] = $mTemp
+			Next
+			$aA = $aTmp
+			$aTmp = Null
+		EndIf
 
 	Else
 		Return SetError(1, $nDimsA, Null)
@@ -981,7 +1001,22 @@ Func _td_join($aA, $aB, $vCompA = 0, $vCompB = Default, $sJoinType = "inner")
 	; prepare Array B (convert into Array-In-Array)
 	If $nDimsB = 2 Then ; 2D-Array in Array-In-Array
 		; convert into Array-In-Array for better handling in the next steps
-		$aB = __td_A2dToAinA($aB)
+		If $bCallBackParamArrayB Then
+			; convert into Array-In-Array for better handling in the next steps
+			$aB = __td_A2dToAinA($aB)
+		Else
+			; convert into Map for better handling in the next steps
+			Local $aTmp[$nRowsB]
+			For $i = 0 To $nRowsB - 1
+				Local $mTemp[]
+				For $j = 0 To $nColsB - 1
+					$mTemp[$aHeaderB[$j]] = $aB[$i][$j]
+				Next
+				$aTmp[$i] = $mTemp
+			Next
+			$aB = $aTmp
+			$aTmp = Null
+		EndIf
 	Else
 		Return SetError(2, $nDimsB, Null)
 	EndIf
@@ -1108,6 +1143,15 @@ Func _td_join($aA, $aB, $vCompA = 0, $vCompB = Default, $sJoinType = "inner")
 		$aData = $aA[$i]
 		$sKey = $cbKeyA($aData, $vCompA)
 
+		If Not $bCallBackParamArrayA Then
+			; reconvert row map into row array
+			Local $aTmp[$nColsA + $nColsB]
+			For $j = 0 To $nColsA - 1
+				$aTmp[$j] = $aData[$aHeaderA[$j]]
+			Next
+			$aData = $aTmp
+		EndIf
+
 		Local $aSubElements[1]
 		If MapExists($mA, $sKey) Then ; record with same key already exists
 			$aSubElements = $mA[$sKey]
@@ -1124,6 +1168,15 @@ Func _td_join($aA, $aB, $vCompA = 0, $vCompB = Default, $sJoinType = "inner")
 	For $i = 0 To $nRowsB - 1
 		$aData = $aB[$i]
 		$sKey = $cbKeyB($aData, $vCompB)
+
+		If Not $bCallBackParamArrayB Then
+			; reconvert row map into row array
+			Local $aTmp[$nColsB]
+			For $j = 0 To $nColsB - 1
+				$aTmp[$j] = $aData[$aHeaderB[$j]]
+			Next
+			$aData = $aTmp
+		EndIf
 
 		Local $aSubElements[1]
 		If MapExists($mB, $sKey) Then ; record with same key already exists
@@ -1647,7 +1700,7 @@ Func __td_cb_getKey_Index_Multi(ByRef Const $aA, Const $aInd)
 EndFunc   ;==>__td_cb_getKey_Index_Multi
 
 ; #INTERNAL_USE_ONLY# =============================================================================
-; helper function for _td_join() and _ArrayAddGeneratedColumn which determines a primary key from a calculation rule as AutoIt code in the string $sCBString
+; helper function for _td_join() which determines a primary key from a calculation rule as AutoIt code in the string $sCBString
 Func __td_cb_getKey_String(ByRef Const $A, Const $sCBSTRING)
 	Local $vRet = Execute($sCBSTRING)
 	Return SetError(@error, @extended, $vRet)
