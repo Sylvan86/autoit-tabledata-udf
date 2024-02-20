@@ -27,8 +27,11 @@
 ;  _td_display         - present a table object like _ArrayDisplay
 ;  _td_toArray         - creates an array from a table object
 ;
-;  ----- Preparation of 2D arrays for easy further processing ---
+;  ------ process table objects ------------
 ;  _td_join            - sql-like joins for table objects
+;  _td_filter          - sql-like "where"-filtering for table objects
+; 
+;  ----- Preparation of 2D arrays for easy further processing ---
 ;  _td_toObjects       - converts a table object into a set of key-value maps (every record = key-value map)
 ;  _td_toDics          - converts a table object into a set of objects (every record = Dictionary with named attributes)
 ;  _td_toPrimaryKeys   - converts a table object into a map where the data can be accessed by their unique primary key
@@ -1311,6 +1314,86 @@ Func _td_join($aA, $aB, $vCompA = 0, $vCompB = Default, $sJoinType = "inner", $b
 
 	Return SetExtended(UBound($aRet), $mRet)
 EndFunc   ;==>_td_join
+
+
+; #FUNCTION# ======================================================================================
+; Name ..........: _td_filter()
+; Description ...: filter elements of table object via user defined rules (like WHERE in SQL)
+; Syntax ........: _td_filter($mTable, $vLambda)
+; Parameters ....: $mTable    - table object structured like in this udf which should be filtered
+;                  $vLambda   - Rule whether an element should be kept or deleted
+;                               the function get the current dataset as map where keys = attribute names and values = their values as single parameter
+;                               Can be:
+;                               | user-defined function: function which gets the current dataset as map as first parameter and return true or false
+;                               | lambda function as String which containts "$x":
+;                                    - If contains "$x": AutoIt-Code as string which gets the current dataset as map as first parameter and return true or false
+; Return values .: Success: filtered table object @extended = number of rows
+;                  Failure: null and set error to:
+;                           | @error = 1 : $mTable is not a valid table object
+;                           | @error = 2 : not enough header elements for the number of columns
+;                           | @error = 3 : error during _td_toObjects() (@extended = @error from _td_toObjects)
+;                           | @error = 4 : invalid value for $vLambda
+; Author ........: aspirinjunkie
+; Modified ......: 2024-02-20
+; Related .......: __td_executeString(), _td_toObjects(), _td_MapsToTable()
+; Example .......: Yes
+;                  #include <WinAPIConv.au3>
+;                  $mData =  _td_fromCsv(_getCmdOutput('driverquery /FO CSV',  True), ',', 0, "module|name|type|date")
+;                  _td_display($mData, "all drivers")
+;                  $mFiltered = _td_filter($mData, "$x.type = 'File System'")
+;                  _td_display($mFiltered, "file system drivers")
+;                  ; run cmdline-commands and return their output
+;                  Func _getCmdOutput($sCmd, $bComspec = False, $oFlags = $STDOUT_CHILD)
+;                      Local $iPID = Run(($bComspec ? '"' & @ComSpec & '" /c ' : "") & $sCmd, "", @SW_Hide, $oFlags)
+;                      ProcessWaitClose($iPID)
+;                      Return _WinAPI_OemToChar(StdoutRead($iPID))
+;                  EndFunc
+; =================================================================================================
+Func _td_filter($mTable, $vLambda)
+	If Not IsMap($mTable) Or Not MapExists($mTable, "Header") Or Not MapExists($mTable, "Data") Then Return SetError(1,0,Null)
+
+	Local $aHeader = $mTable.Header
+	Local $aData = $mTable.Data
+	
+	If UBound($aHeader) < UBound($aData, 2) Then Return SetError(2, UBound($aHeader), Null)
+
+	; convert into a map-array to access data by attribute name
+	$mTable = _td_toObjects($mTable)
+	If @error Then Return SetError(3, @error, Null)
+
+	Local $dX = 0
+	Select 
+		Case IsFunc($vLambda) ; user defined function
+			For $i = 0 To UBound($mTable) - 1
+				If $vLambda($mTable[$i]) Then
+					$mTable[$dX] = $mTable[$i]
+					$dX += 1
+				EndIf
+			Next
+
+		Case StringInStr($vLambda, '$x', 2) ; lambda function as a string
+			For $i = 0 To UBound($mTable) - 1
+				If __td_executeString($vLambda, $mTable[$i]) Then
+					$mTable[$dX] = $mTable[$i]
+					$dX += 1
+				EndIf
+			Next
+
+		Case Else
+			Return SetError(4, 0, Null)
+
+	EndSelect
+
+	If $dX <= 1 Then 
+		Local $mRet[], $aData[0][UBound($aHeader)]
+		$mRet.Header = $aHeader
+		$mRet.Data = $aData
+		Return SetExtended(0, $mRet)
+	Else
+		Redim $mTable[$dX]
+		Return SetExtended($dX, _td_MapsToTable($mTable))
+	EndIf
+EndFunc
 
 ; #FUNCTION# ======================================================================================
 ; Name ..........: _td_getColumn()

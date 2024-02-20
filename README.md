@@ -75,8 +75,10 @@ If you now use functions such as `_td_toObjects()`, you can process the individu
 |  `_td_toFixWidth`      | convert a table object into a string where the columns has fixed width` |
 |  `_td_display`         | present a table object like _ArrayDisplay |
 |  `_td_toArray`         | creates an array from a table object |
-| <b>Preparation of 2D arrays</b> | <b>for easy further processing</b> |
+| <b>process table objects</b> | |
 |  `_td_join`          | sql-like joins for table objects |
+|  `_td_filter`        | sql-like "where"-filtering for table objects |
+| <b>Preparation of 2D arrays</b> | <b>for easy further processing</b> |
 |  `_td_toObjects`     | converts a 2D-Array (rows=records, columns=values, column headers=keys) into a set of key-value maps (every record = key-value map)
 |  `_td_toDics`     | converts a 2D-Array (rows=records, columns=values, column headers=keys) into a set of objects (every record = Dictionary with named attributes) |
 |  `_td_toPrimaryKeys`  | converts a table object into a map where the data can be accessed by their unique primary key |
