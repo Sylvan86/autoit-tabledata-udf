@@ -30,6 +30,7 @@
 ;  ------ process table objects ------------
 ;  _td_join            - sql-like joins for table objects
 ;  _td_filter          - sql-like "where"-filtering for table objects
+;  _td_sort            - sort a table object
 ; 
 ;  ----- Preparation of 2D arrays for easy further processing ---
 ;  _td_toObjects       - converts a table object into a set of key-value maps (every record = key-value map)
@@ -1393,6 +1394,74 @@ Func _td_filter($mTable, $vLambda)
 		Redim $mTable[$dX]
 		Return SetExtended($dX, _td_MapsToTable($mTable))
 	EndIf
+EndFunc
+
+; #FUNCTION# ======================================================================================
+; Name ..........: _td_sort()
+; Description ...: sort a table object
+; Syntax ........: _td_sort(ByRef $mTable, $vRow = Default, $bDesc = False)
+; Parameters ....: $mTable    - table object structured like in this udf which should be filtered
+;                  $vRow      - Column to be sorted by or comparison value determined from the data
+;                               Can be:
+;                               | number: column number
+;                               | string: column name
+;                               | string which contains "$x": 
+;                                 AutoIt-Code as string which gets the current dataset as map
+;                                 to calculate a comparison value for
+;                  $bDesc      - if true: sort in descending order
+;                                if false: sort in ascending order
+; Return values .: Success: True
+;                  Failure: null and set error to:
+;                           | @error = 1 : $mTable is not a valid table object
+;                           | @error = 2 : not enough header elements for the number of columns
+;                           | @error = 3 : error during _td_toObjects() (@extended = @error from _td_toObjects)
+; Author ........: aspirinjunkie
+; Modified ......: 2024-03-25
+; Related .......: __td_executeString(), _td_toObjects(), _td_MapsToTable()
+; =================================================================================================
+Func _td_sort(ByRef $mTable, $vRow = Default, $bDesc = False)
+	If Not IsMap($mTable) Or Not MapExists($mTable, "Header") Or Not MapExists($mTable, "Data") Then Return SetError(1,0,Null)
+
+	Local $aHeader = $mTable.Header
+	Local $aData = $mTable.Data
+	
+	If UBound($aHeader) < UBound($aData, 2) Then Return SetError(2, UBound($aHeader), Null)
+
+	Select
+		Case IsKeyword($vRow) = 1
+			$vRow = $aHeader[0]
+
+		Case IsString($vRow)
+			Local $iIndex = _ArraySearch($aHeader, $vRow)
+			If @error Then ContinueCase
+			$vRow = $iIndex
+
+		Case $vRow = -1 Or StringInStr($vRow, "$x") ; user defined comparison (only rough implementation yet)
+			Local $aSort[UBound($aData, 1)][2]
+			$aMaps = _td_toObjects($mTable)
+			If @error Then Return SetError(3, @error, Null)
+			
+			For $i = 0 To UBound($aSort) - 1
+				Local $mM = $aMaps[$i]
+				
+				$aSort[$i][0] = __td_executeString($vRow, $mM)
+				$aSort[$i][1] = $aMaps[$i]
+			Next
+
+			_ArraySort($aSort, $bDesc)
+
+			For $i = 0 To UBound($aSort) - 1
+				$aMaps[$i] = $aSort[$i][1]
+			Next
+
+			$mTable = _td_MapsToTable($aMaps)
+			Return True
+	EndSelect
+
+	_ArraySort($aData, $bDesc, 0, 0, $vRow)
+
+	$mTable.Data = $aData
+	Return True
 EndFunc
 
 ; #FUNCTION# ======================================================================================
