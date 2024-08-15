@@ -1533,12 +1533,11 @@ Func _td_getColumn($mTable, $vColumn, $vHeader = Default)
 		Next
 		Return $aRet
 	Else ; scalar / single column selector
-		Local $iStart = (IsKeyword($vHeader) = 1) ? 1 : 0
-		Local $aRet[UBound($aData, 1) - $iStart]
+		Local $aRet[UBound($aData, 1)]
 
 		Local $iColumn = IsString($vColumn) ? $mHeader[$vColumn] : $vColumn
-		For $i = $iStart To UBound($aData, 1) - 1
-			$aRet[$i - $iStart] = $aData[$i][$iColumn]
+		For $i = 0 To UBound($aData, 1) - 1
+			$aRet[$i] = $aData[$i][$iColumn]
 		Next
 		Return $aRet
 	EndIf
