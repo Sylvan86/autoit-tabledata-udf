@@ -77,8 +77,9 @@ If you now use functions such as `_td_toObjects()`, you can process the individu
 |  `_td_toArray`         | creates an array from a table object |
 | <b>process table objects</b> | |
 |  `_td_join`          | sql-like joins for table objects |
-|  `_td_groupBy`       | sql-like grouping for table objects |
 |  `_td_filter`        | sql-like "where"-filtering for table objects |
+|  `_td_groupBy`       | sql-like grouping for table objects |
+|  `_td_reduce`        | combines values of a table object to a scalar value (e.g. sum, concat string etc.) |
 |  `_td_sort`          | sort a table object |
 | <b>Preparation of 2D arrays</b> | <b>for easy further processing</b> |
 |  `_td_toObjects`     | converts a 2D-Array (rows=records, columns=values, column headers=keys) into a set of key-value maps (every record = key-value map)

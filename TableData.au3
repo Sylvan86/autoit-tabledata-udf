@@ -31,6 +31,7 @@
 ;  _td_join            - sql-like joins for table objects
 ;  _td_filter          - sql-like "where"-filtering for table objects
 ;  _td_groupBy         - groups the values of a table object based on certain properties
+;  _td_reduce          - combines values of a table object to a scalar value (e.g. sum, concat string etc.)
 ;  _td_sort            - sort a table object
 ;
 ;  ----- Preparation of 2D arrays for easy further processing ---
@@ -1512,6 +1513,54 @@ Func _td_groupBy($mTable, $vAttributeList, $sDelim = Opt("GUIDataSeparatorChar")
 	Next
 
 	Return SetExtended(UBound($mReturn), $mReturn)
+EndFunc
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _td_reduce()
+; Description ...: combines values of a table object to a scalar value (e.g. sum, concat string etc.)
+; Syntax ........: _td_reduce($mTable, $sFunc, [$vInitial = ""])
+; Parameters ....: mTable   - [Map] table object structured like in this udf
+;                  sFunc    - [String] combination function as a string which is executed for each element of the table, preceded by $vInitial
+;                             "$x" represents the current array line as a map with attributes as keys
+;                  vInitial - [Variant](Default: "")
+;                           ↳ Initial value, which is changed step by step across all elements.
+;                             For a sum, this should be 0.0 at the start, for example
+; Return value ..: Success: the final value of $vInitial
+;                  Failure: Null and set @error to:
+;                           | 1: $mTable is not a valid table object
+;                           | 2: not enough header elements for the number of columns (@extended: size of header elements)
+;                           | 3: error during _td_toObjects (@extended: @error from _td_toObjects())
+;                           | 4: error during __td_executeString (@extended: @error from __td_executeString())
+; Author ........: AspirinJunkie
+; Modified.......: 2025-01-23
+; Remarks .......:
+; Related .......:
+; Link ..........:
+; Example .......: Yes
+;                  Global $aArray[5][4] = [["name", "age", "salary", "married"], ["Max", 25, 5000.50, True], ["Anna", 30, 6000.75, False], ["Peter", 35, 7000.25, True], ["Lena", 28, 5500.50, False]]
+;                  $mData = _td_fromArray($aArray, True)
+;                  _td_display($mData, "the data")
+;                  $fSalarySum = _td_reduce($mData, "+ $x.salary", 0)
+;                  MsgBox(0, "Salary sum", $fSalarySum)
+; ===============================================================================================================================
+Func _td_reduce($mTable, $sFunc, $vInitial = "")
+	If Not IsMap($mTable) Or Not MapExists($mTable, "Header") Or Not MapExists($mTable, "Data") Then Return SetError(1,0,Null)
+
+	Local $aHeader = $mTable.Header
+	Local $aData = $mTable.Data
+
+	If UBound($aHeader) < UBound($aData, 2) Then Return SetError(2, UBound($aHeader), Null)
+
+	; convert into a map-array to access data by attribute name
+	$mTable = _td_toObjects($mTable)
+	If @error Then Return SetError(3, @error, Null)
+
+	For $i = 0 To UBound($mTable) - 1
+		$vInitial = __td_executeString($vInitial & " " & $sFunc, $mTable[$i])
+		If @error Then Return SetError(4, @error, Null)
+	Next
+
+	Return $vInitial
 EndFunc
 
 ; #FUNCTION# ======================================================================================
