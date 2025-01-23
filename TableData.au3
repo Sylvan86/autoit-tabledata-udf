@@ -30,8 +30,9 @@
 ;  ------ process table objects ------------
 ;  _td_join            - sql-like joins for table objects
 ;  _td_filter          - sql-like "where"-filtering for table objects
+;  _td_groupBy         - groups the values of a table object based on certain properties
 ;  _td_sort            - sort a table object
-; 
+;
 ;  ----- Preparation of 2D arrays for easy further processing ---
 ;  _td_toObjects       - converts a table object into a set of key-value maps (every record = key-value map)
 ;  _td_toDics          - converts a table object into a set of objects (every record = Dictionary with named attributes)
@@ -1394,6 +1395,123 @@ Func _td_filter($mTable, $vLambda)
 		Redim $mTable[$dX]
 		Return SetExtended($dX, _td_MapsToTable($mTable))
 	EndIf
+EndFunc
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _td_groupBy()
+; Description ...: groups the values of a table object based on certain properties
+; Syntax ........: _td_groupBy($mTable, $vAttributeList, [$sDelim = Opt("GUIDataSeparatorChar"])
+; Parameters ....: mTable         - [Map] table object structured like in this udf
+;                  vAttributeList - [Variant] list of attributes or a user-defined function that define the group value as a key
+;                                   Can be:
+;                                   | string without "$x": single attribute name or list of attributes separated by $sDelim
+;                                   | string with "$x": AutoIt-Code as string return the key where "$x" represents the current array line as a map with attributes as keys
+;                                   | 1D-array: list of array indices
+;                  sDelim         - [String] (Default: Opt("GUIDataSeparatorChar")
+;                                 ↳ separator char/string for the column identifiers in vAttributeList
+; Return value ..: Success: [Map] list of groups with their group key as key and the group data as table object
+;                  Failure: Null and set @error to:
+;                           | 1: $mTable is not a valid table object
+;                           | 2: not enough header elements for the number of columns (@extended: size of header elements)
+;                           | 3: error during _td_toObjects (@extended: @error from _td_toObjects())
+;                           | 4: invalid number of elements in $vAttributeList
+;                           | 5: given attribute name is not found in header (@extended: index of failed name)
+;                           | 6: invalid type for $vAttributeList
+; Author ........: AspirinJunkie
+; Modified.......: 2025-01-23
+; Remarks .......:
+; Related .......:
+; Link ..........:
+; Example .......: Yes
+;                  #include <WinAPIConv.au3>
+;                  $mNetStat = _td_fromFixWidth(_getCmdOutput('netstat -ano'), "7;23;23;16;Number 100", "1-2", true)
+;                  $mGroups = _td_groupBy($mNetStat, "$x.Proto & ' - ' & $x.Status")
+;                  For $sProtoStatus In MapKeys($mGroups)
+;                      _td_display($mGroups[$sProtoStatus], $sProtoStatus)
+;                  Next
+;                  Func _getCmdOutput($sCmd, $bComspec = False, $oFlags = $STDOUT_CHILD)
+;                      Local $iPID = Run(($bComspec ? '"' & @ComSpec & '" /c ' : "") & $sCmd, "", @SW_Hide, $oFlags)
+;                      ProcessWaitClose($iPID)
+;                      Return _WinAPI_OemToChar(StdoutRead($iPID))
+;                  EndFunc
+; ===============================================================================================================================
+Func _td_groupBy($mTable, $vAttributeList, $sDelim = Opt("GUIDataSeparatorChar"))
+	If Not IsMap($mTable) Or Not MapExists($mTable, "Header") Or Not MapExists($mTable, "Data") Then Return SetError(1,0,Null)
+
+	Local $aHeader = $mTable.Header
+	Local $aData = $mTable.Data
+	Local $iNCols = UBound($aData, 2)
+	Local $mObjectList, $bLambda = False
+
+	If UBound($aHeader) < UBound($aData, 2) Then Return SetError(2, UBound($aHeader), Null)
+
+	; convert attribute names into
+	If IsString($vAttributeList) Then
+		If StringInStr($vAttributeList, '$x', 2) Then ; lambda function as a string
+			$bLambda = True
+			$mObjectList = _td_toObjects($mTable)
+			If @error Then Return SetError(3, @error, Null)
+		Else
+			$vAttributeList = StringSplit($vAttributeList, $sDelim, 3)
+		EndIf
+	EndIf
+
+	Local $iCAttribs
+	If IsArray($vAttributeList) Then
+		$iCAttribs = UBound($vAttributeList, 1)
+		If UBound($vAttributeList, 0) <> 1 Or $iCAttribs < 1 Then Return SetError(4, $iCAttribs, Null)
+
+		For $i = 0 To $iCAttribs - 1
+			If IsString($vAttributeList[$i]) Then
+				$vAttributeList[$i] = _ArraySearch($aHeader, $vAttributeList[$i])
+				If @error Then Return SetError(5, $i, Null)
+			EndIf
+		Next
+	ElseIf Not $bLambda Then
+		Return SetError(6, 0, Null)
+	EndIf
+
+	Local $mReturn[], $mSizes[], $sGroupKey, $iGroupIndex, $aGroupData
+	For $i = 0 To UBound($aData) - 1
+		If $bLambda Then
+			$sGroupKey = __td_executeString($vAttributeList, $mObjectList[$i])
+		Else
+			$sGroupKey = ""
+			For $j = 0 To $iCAttribs - 1
+				$sGroupKey &= $aData[$i][$vAttributeList[$j]] & $sDelim
+			Next
+			$sGroupKey = StringTrimRight($sGroupKey, 1)
+		EndIf
+
+		If Not MapExists($mReturn, $sGroupKey) Then
+			$mSizes[$sGroupKey] = 0
+			Local $aGroupData[1][$iNCols]
+			$mReturn[$sGroupKey] = $aGroupData
+		EndIf
+		$iGroupIndex = $mSizes[$sGroupKey] ; size of group data
+		$aGroupData = $mReturn[$sGroupKey] ; data array of group data
+
+		$mSizes[$sGroupKey] += 1
+
+		; resize dynamic like a array list
+		If UBound($aGroupData) <= $mSizes[$sGroupKey] Then Redim $aGroupData[UBound($aGroupData) * 2][$iNCols]
+
+		; transfer data to group array
+		For $j = 0 To $iNCols - 1
+			$aGroupData[$iGroupIndex][$j] = $aData[$i][$j]
+		Next
+		$mReturn[$sGroupKey] = $aGroupData
+	Next
+
+	; resize sub-arrays
+	For $sKey In MapKeys($mReturn)
+		$aGroupData = $mReturn[$sKey]
+		If UBound($aGroupData, 1) <> $mSizes[$sKey] Then Redim $aGroupData[$mSizes[$sKey]][$iNCols]
+
+		$mReturn[$sKey] = _td_fromArray($aGroupData, $aHeader)
+	Next
+
+	Return SetExtended(UBound($mReturn), $mReturn)
 EndFunc
 
 ; #FUNCTION# ======================================================================================
